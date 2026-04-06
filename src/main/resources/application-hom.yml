@@ -1,0 +1,53 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# HOM — staging, banco separado, Swagger visível para QA
+# ══════════════════════════════════════════════════════════════════════════════
+server:
+  port: 8080
+  forward-headers-strategy: framework
+
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST:hom-db}:3306/condowhats_hom?useSSL=true&requireSSL=false&serverTimezone=America/Sao_Paulo&characterEncoding=UTF-8
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      pool-name: CondoWhats-HOM-Pool
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+condowhats:
+  telegram:
+    mode: WEBHOOK
+
+logging:
+  level:
+    com.condowhats: DEBUG
+    org.springframework.web: INFO
+    org.springframework.security: INFO
+    org.hibernate.SQL: WARN
+  file:
+    name: /var/log/condowhats/condowhats-hom.log
+  logback:
+    rollingpolicy:
+      max-file-size: 50MB
+      max-history: 7
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, loggers
+  endpoint:
+    health:
+      show-details: when-authorized
+
+springdoc:
+  swagger-ui:
+    enabled: true
+  api-docs:
+    enabled: true
