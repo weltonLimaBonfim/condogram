@@ -1,6 +1,5 @@
 package com.condowhats.adapter.in.messaging.telegram;
 
-import com.condowhats.adapter.in.messaging.telegram.TelegramGatewayService;
 import com.condowhats.service.WebhookLogService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,38 +15,26 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
-/**
- * Recebe updates do Telegram via Webhook.
- * <p>
- * URL: POST /telegram/webhook/{botUsername}
- * <p>
- * O Telegram envia os updates para a URL configurada via setWebhook.
- * Cada bot de cada condomínio tem seu próprio token, mas todos usam
- * o mesmo endpoint — o botUsername na URL identifica o condomínio.
- * <p>
- * Autenticação: o Telegram envia o header X-Telegram-Bot-Api-Secret-Token
- * com o valor configurado em setWebhook — validamos aqui.
- */
 @Slf4j
 @RestController
 @RequestMapping("/telegram/webhook")
 @RequiredArgsConstructor
-@Tag(name = "Telegram Webhook", description = "Endpoint chamado pelo Telegram — não chamar manualmente")
+@Tag(name = "Telegram Webhook", description = "Endpoint chamado pelo Telegram — não chamar manualmente em produção")
 public class TelegramWebhookController {
 
     private final TelegramGatewayService gatewayService;
     private final WebhookLogService webhookLog;
     private final ObjectMapper objectMapper;
 
-    @Value("${condowhats.telegram.webhook-secret}")
+    @Value("${condowhats.telegram.webhook-secret:}")
     private String webhookSecret;
 
     @Operation(
             summary = "Receber update do Telegram",
             description = """
                     Recebe updates (mensagens e callback_queries) do Telegram.
-                    O header `X-Telegram-Bot-Api-Secret-Token` valida a origem.
-                    O processamento é assíncrono — retorna 200 imediatamente.
+                    O header X-Telegram-Bot-Api-Secret-Token valida a origem.
+                    Retorna 200 imediatamente — processamento é assíncrono.
                     """,
             security = @SecurityRequirement(name = "")
     )
@@ -59,9 +46,8 @@ public class TelegramWebhookController {
             @RequestBody String rawBody,
             @RequestHeader(value = "X-Telegram-Bot-Api-Secret-Token", required = false) String secret) {
 
-        // Valida o secret token configurado no setWebhook
-        if (!webhookSecret.equals(secret)) {
-            log.warn("Secret token inválido no webhook Telegram | bot=@{}", botUsername);
+        if (webhookSecret != null && !webhookSecret.isBlank() && !webhookSecret.equals(secret)) {
+            log.warn("Secret token inválido | bot=@{}", botUsername);
             return ResponseEntity.status(403).build();
         }
 
@@ -74,7 +60,6 @@ public class TelegramWebhookController {
             log.error("Erro ao processar update Telegram | bot=@{}: {}", botUsername, e.getMessage());
         }
 
-        // Telegram exige 200 imediato — processamento é assíncrono
         webhookLog.log(rawBody, Map.of("bot", botUsername), true, null, errorMsg);
         return ResponseEntity.ok().build();
     }

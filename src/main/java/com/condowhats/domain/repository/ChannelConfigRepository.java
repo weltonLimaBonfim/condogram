@@ -4,12 +4,19 @@ import com.condowhats.domain.model.ChannelConfig;
 import com.condowhats.domain.port.Channel;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface ChannelConfigRepository extends JpaRepository<ChannelConfig, Long> {
+
     Optional<ChannelConfig> findByCondominiumIdAndChannelAndActiveTrue(Long condoId, Channel channel);
 
     Optional<ChannelConfig> findByPublicIdentifierAndChannel(String publicIdentifier, Channel channel);
+
+    /**
+     * Usado pelo polling — retorna todos os bots ativos de um canal
+     */
+    List<ChannelConfig> findAllByChannelAndActiveTrue(Channel channel);
 
     /**
      * Busca bot compartilhado (shared) ativo para um canal
