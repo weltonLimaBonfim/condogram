@@ -16,15 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 
-/**
- * Gerencia o fluxo de identificação por CPF no bot único multicondomínio.
- * <p>
- * Estados:
- * IDENTIFYING      → aguarda CPF
- * CPF_NOT_FOUND    → CPF não encontrado após MAX_ATTEMPTS tentativas
- * CPF_BLOCKED      → morador está bloqueado (enceramento)
- * MAIN_MENU        → identificação concluída com sucesso
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -45,10 +36,6 @@ public class IdentificationService {
         session.getContextData().put("cpfAttempts", 0);
     }
 
-    /**
-     * Processa o texto enviado como CPF.
-     * Retorna true se a identificação foi concluída, false se ainda pendente.
-     */
     @Transactional
     public boolean handleCpfInput(BotSession session, String input) {
         String cpf = Resident.normalizeCpf(input);
@@ -60,19 +47,11 @@ public class IdentificationService {
 
         List<Resident> found = residentRepo.findAllByCpfAndActive(cpf);
 
-        if (found.isEmpty()) {
-            return handleNotFound(session, cpf);
-        }
-        if (found.size() == 1) {
-            return identifyAs(session, found.get(0));
-        }
+        if (found.isEmpty()) return handleNotFound(session, cpf);
+        if (found.size() == 1) return identifyAs(session, found.get(0));
         return handleMultipleCondos(session, found);
     }
 
-    /**
-     * Processa a escolha do condomínio quando o morador está em múltiplos.
-     * Retorna true se a identificação foi concluída.
-     */
     @Transactional
     public boolean handleCondoChoice(BotSession session, String callbackData) {
         if (!callbackData.startsWith("CONDO_")) return false;
@@ -125,65 +104,55 @@ public class IdentificationService {
                 )))
                 .toList();
 
-        // Usa sendRaw porque session ainda não tem condomínio definido
-        router.sendRawWithButtons(session.getResident(), session.getChannel(),
-                "Seu CPF está cadastrado em mais de um condomínio. Selecione:", rows
-        ).subscribe();
-
+        try {
+            router.sendRawWithButtons(session.getResident(), session.getChannel(),
+                    "Seu CPF está cadastrado em mais de um condomínio. Selecione:", rows
+            ).block();
+        } catch (Exception e) {
+            log.error("Falha ao enviar lista de condomínios para residentId={}: {}",
+                    session.getResident().getId(), e.getMessage(), e);
+        }
         return false;
     }
 
-    /**
-     * Conclui a identificação:
-     * 1. Migra o ResidentChannel do placeholder para o Resident real
-     * 2. Deleta o placeholder (após desvincular o canal)
-     * 3. Vincula a sessão ao condomínio correto
-     * 4. Envia boas-vindas
-     */
     @Transactional
     boolean identifyAs(BotSession session, Resident identified) {
         Resident placeholder = session.getResident();
 
         if (!placeholder.getId().equals(identified.getId())) {
-            // 1. Migra o ResidentChannel PRIMEIRO (antes de deletar o placeholder)
             residentChannelRepo
                     .findByResidentIdAndChannel(placeholder.getId(), session.getChannel())
                     .ifPresent(rc -> {
-                        rc.setResident(identified);   // aponta para o residente real
-                        rc.setOptedIn(true);
+                        rc.setResident(identified);
+                        rc.setOptedIn(Boolean.TRUE);
                         rc.setOptedInAt(Instant.now());
                         residentChannelRepo.save(rc);
-                        residentChannelRepo.flush();   // garante que a FK foi atualizada no banco
+                        residentChannelRepo.flush();
                     });
 
-            // 2. Atualiza a sessão para o residente real
             session.setResident(identified);
             sessionRepo.save(session);
 
-            // 3. Deleta o placeholder — agora sem FK pendente
             residentRepo.delete(placeholder);
             residentRepo.flush();
-
         } else {
-            // Morador já identificado retornando com sessão expirada
             residentChannelRepo
                     .findByResidentIdAndChannel(identified.getId(), session.getChannel())
                     .ifPresent(rc -> {
-                        if (!rc.getOptedIn()) {
-                            rc.setOptedIn(true);
+                        if (!Boolean.TRUE.equals(rc.getOptedIn())) {
+                            rc.setOptedIn(Boolean.TRUE);
                             rc.setOptedInAt(Instant.now());
                             residentChannelRepo.save(rc);
                         }
                     });
         }
 
-        // 4. Vincula sessão ao condomínio e avança o estado
         session.setCondominium(identified.getCondominium());
         session.setBotState(BotState.MAIN_MENU);
         session.getContextData().clear();
         sessionRepo.save(session);
 
-        // 5. Boas-vindas com nome, condomínio e unidade
+        // Mensagem de boas-vindas — .block() garante envio antes da transação fechar
         String greeting = String.format(
                 "Olá, *%s*! Bem-vindo ao *%s* \uD83C\uDFE2\n\nApto: %s%s",
                 identified.getName(),
@@ -191,23 +160,31 @@ public class IdentificationService {
                 identified.getUnitNumber(),
                 identified.getBlock() != null ? " — Bloco " + identified.getBlock() : ""
         );
-        // Já tem condomínio — pode usar send normal
-        router.send(
-                identified.getCondominium(), identified, session.getChannel(), greeting
-        ).subscribe();
+        try {
+            router.send(
+                    identified.getCondominium(), identified, session.getChannel(), greeting
+            ).block();
+        } catch (Exception e) {
+            log.error("Falha ao enviar boas-vindas para residentId={}: {}",
+                    identified.getId(), e.getMessage(), e);
+        }
 
         log.info("Morador identificado: residentId={} condo={}",
                 identified.getId(), identified.getCondominium().getId());
         return true;
     }
 
-    // ── Envio pré-identificação (sem condomínio na sessão) ────────────────────
-
     /**
-     * Envia texto antes da identificação — usa o bot shared via sendRaw.
-     * NÃO usa router.send() porque session.getCondominium() ainda é null.
+     * Envia texto pré-identificação via bot shared.
+     * Usa .block() — necessário porque estamos numa thread @Async (não reativa).
+     * .subscribe() fire-and-forget não garante envio antes do método retornar.
      */
     private void sendRaw(BotSession session, String text) {
-        router.sendRaw(session.getResident(), session.getChannel(), text).subscribe();
+        try {
+            router.sendRaw(session.getResident(), session.getChannel(), text).block();
+        } catch (Exception e) {
+            log.error("Falha ao enviar mensagem pré-identificação residentId={}: {}",
+                    session.getResident().getId(), e.getMessage(), e);
+        }
     }
 }

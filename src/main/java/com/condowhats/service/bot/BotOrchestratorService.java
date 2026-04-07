@@ -44,7 +44,7 @@ public class BotOrchestratorService {
     private final ReservationService reservationService;
     private final IdentificationService identificationService;
 
-    @Async
+    //@Async
     @EventListener
     @Transactional
     public void onMessage(BotMessageReceived event) {
@@ -97,7 +97,7 @@ public class BotOrchestratorService {
             return BotState.MAIN_MENU;
         }
 
-        if ("/sair".equalsIgnoreCase(input) || "/logout".equalsIgnoreCase(input)) {
+        if ("/sair".contains(input) || "/logout".equalsIgnoreCase(input)) {
             session.setCondominium(null);
             session.getContextData().clear();
             sendText(session, "Sessão encerrada. Envie qualquer mensagem para começar novamente.");
@@ -319,26 +319,34 @@ public class BotOrchestratorService {
     }
 
     private void sendText(BotSession session, String text) {
-        if (session.getCondominium() == null) {
-            // Pré-identificação: usa o ChannelConfig global para enviar
-            router.sendRaw(session.getResident(), session.getChannel(), text).subscribe();
-        } else {
-            router.send(session.getCondominium(), session.getResident(), session.getChannel(), text).subscribe();
+        try {
+            if (session.getCondominium() == null) {
+                router.sendRaw(session.getResident(), session.getChannel(), text).block();
+            } else {
+                router.send(session.getCondominium(), session.getResident(), session.getChannel(), text).block();
+            }
+        } catch (Exception e) {
+            log.error("Falha ao enviar texto | residentId={} canal={}: {}",
+                    session.getResident().getId(), session.getChannel(), e.getMessage(), e);
         }
     }
 
     private void send(BotSession session, OutboundMessage msg) {
-        if (msg.buttons() != null) {
-            if (session.getCondominium() == null) {
-                // Pré-identificação — usa bot shared
-                router.sendRawWithButtons(session.getResident(),
-                        session.getChannel(), msg.text(), msg.buttons()).subscribe();
+        try {
+            if (msg.buttons() != null) {
+                if (session.getCondominium() == null) {
+                    router.sendRawWithButtons(session.getResident(),
+                            session.getChannel(), msg.text(), msg.buttons()).block();
+                } else {
+                    router.sendWithButtons(session.getCondominium(), session.getResident(),
+                            session.getChannel(), msg.text(), msg.buttons()).block();
+                }
             } else {
-                router.sendWithButtons(session.getCondominium(), session.getResident(),
-                        session.getChannel(), msg.text(), msg.buttons()).subscribe();
+                sendText(session, msg.text());
             }
-        } else {
-            sendText(session, msg.text());
+        } catch (Exception e) {
+            log.error("Falha ao enviar mensagem com botões | residentId={} canal={}: {}",
+                    session.getResident().getId(), session.getChannel(), e.getMessage(), e);
         }
     }
 

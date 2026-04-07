@@ -18,7 +18,7 @@ public class EventStoreService {
 
     private final InteractionEventRepository repo;
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.REQUIRED)
     public InteractionEvent saveInbound(
             Condominium condo, Resident resident, BotSession session,
             String externalMessageId, String eventType, Map<String, Object> payload) {
@@ -33,7 +33,7 @@ public class EventStoreService {
                 .build());
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.REQUIRED)
     public InteractionEvent saveStateChange(
             Condominium condo, Resident resident, BotSession session,
             String from, String to, Map<String, Object> payload) {
@@ -49,7 +49,7 @@ public class EventStoreService {
                 .build());
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.REQUIRED)
     public InteractionEvent saveOutbound(
             Condominium condo, Resident resident,
             String externalMessageId, String eventType, Map<String, Object> payload) {

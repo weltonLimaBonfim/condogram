@@ -82,7 +82,7 @@ public class OccurrenceManagementService {
                             .filter(rc -> rc.getOptedIn())
                             .ifPresent(rc -> {
                                 var m = new com.condowhats.domain.port.OutboundMessage(rc.getExternalId(), msg.text(), msg.buttons());
-                                router.sendNotification(saved.getCondominium(), saved.getResident(), ch, m).subscribe();
+                                router.sendNotification(saved.getCondominium(), saved.getResident(), ch, m).block();
                             })
             );
         }

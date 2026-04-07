@@ -17,6 +17,16 @@ import java.util.Optional;
 @Slf4j
 public class TelegramUpdateParser {
 
+    public record ParsedUpdate(
+            String chatId,
+            String username,
+            String firstName,
+            String messageType,    // "text" | "callback_query" | "photo" | "document" | "unknown"
+            String content,        // texto ou callback_data
+            String callbackQueryId // só em callback_query — necessário para answerCallbackQuery
+    ) {
+    }
+
     public Optional<ParsedUpdate> parse(JsonNode update) {
         try {
             if (update.has("message")) {
@@ -71,15 +81,5 @@ public class TelegramUpdateParser {
         return Optional.of(new ParsedUpdate(
                 chatId, username, firstName, "callback_query", data, callbackQueryId
         ));
-    }
-
-    public record ParsedUpdate(
-            String chatId,
-            String username,
-            String firstName,
-            String messageType,    // "text" | "callback_query" | "photo" | "document" | "unknown"
-            String content,        // texto ou callback_data
-            String callbackQueryId // só em callback_query — necessário para answerCallbackQuery
-    ) {
     }
 }

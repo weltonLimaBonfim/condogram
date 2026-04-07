@@ -79,19 +79,19 @@ public class NotificationService {
                                 rc.getExternalId(), template.text(), template.buttons()
                         );
                         router.sendNotification(condo, resident, channel, msg)
-                                .subscribe();
+                                .block();
                     });
         });
+    }
+
+    @FunctionalInterface
+    interface Action {
+        void run(Resident r, com.condowhats.domain.model.Condominium c);
     }
 
     private void resolve(Long residentId, Long condoId, Action action) {
         residentRepo.findById(residentId).ifPresent(r ->
                 condoRepo.findById(condoId).ifPresent(c -> action.run(r, c))
         );
-    }
-
-    @FunctionalInterface
-    interface Action {
-        void run(Resident r, com.condowhats.domain.model.Condominium c);
     }
 }
